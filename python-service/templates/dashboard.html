@@ -41,6 +41,56 @@
             opacity: 0.9;
         }
 
+        .metadata-info {
+            margin-top: 15px;
+            padding: 15px;
+            background: #f8f9fa;
+            border-radius: 8px;
+            text-align: left;
+        }
+
+        .metadata-info h4 {
+            margin: 0 0 10px 0;
+            color: #333;
+            font-size: 1em;
+        }
+
+        .metadata-info p {
+            margin: 5px 0;
+            color: #666;
+            font-size: 0.9em;
+        }
+
+        .favicon {
+            width: 16px;
+            height: 16px;
+            margin-right: 8px;
+            vertical-align: middle;
+        }
+
+        .metadata-status {
+            display: inline-block;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-size: 0.8em;
+            margin-left: 8px;
+        }
+
+        .metadata-status.success {
+            background: #d4edda;
+            color: #155724;
+        }
+
+        .metadata-status.failed {
+            background: #f8d7da;
+            color: #721c24;
+        }
+
+        .url-title {
+            font-weight: 500;
+            color: #333;
+        }
+
         .card {
             background: white;
             border-radius: 12px;
@@ -224,7 +274,7 @@
     <div class="container">
         <div class="header">
             <h1>🔗 URL Shortener</h1>
-            <p>Microservice Architecture Demo - Go + Python</p>
+            <p>Microservice Architecture Demo - Go + Python + Node.js</p>
         </div>
 
         <!-- Create Short URL Section -->
@@ -311,11 +361,27 @@
                 
                 if (response.ok) {
                     resultDiv.className = 'result success';
+                    
+                    let metadataHtml = '';
+                    if (data.metadata && data.metadata.status === 'success') {
+                        metadataHtml = `
+                            <div class="metadata-info">
+                                <h4>📊 Metadata Fetched (Node.js Service)</h4>
+                                <p><strong>Title:</strong> ${data.metadata.title}</p>
+                                <p><strong>Description:</strong> ${data.metadata.description}</p>
+                                <p><strong>Favicon:</strong> ${data.metadata.favicon_url ? '✅ Available' : '❌ Not found'}</p>
+                            </div>
+                        `;
+                    } else if (data.metadata && data.metadata.status === 'unavailable') {
+                        metadataHtml = '<div class="metadata-info"><p>⚠️ Node.js metadata service unavailable</p></div>';
+                    }
+                    
                     resultDiv.innerHTML = `
                         <div>✅ Short URL created successfully!</div>
                         <div class="short-url">
                             <a href="${data.short_url}" target="_blank">${data.short_url}</a>
                         </div>
+                        ${metadataHtml}
                     `;
                     resultDiv.style.display = 'block';
                     
@@ -424,20 +490,39 @@
                     <thead>
                         <tr>
                             <th>Short Code</th>
+                            <th>Page Info</th>
                             <th>Long URL</th>
                             <th>Clicks</th>
                             <th>Last Clicked</th>
                         </tr>
                     </thead>
                     <tbody>
-                        ${topUrls.map(url => `
+                        ${topUrls.map(url => {
+                            const faviconHtml = url.favicon_url 
+                                ? `<img src="${url.favicon_url}" class="favicon" onerror="this.style.display='none'">` 
+                                : '🌐 ';
+                            const titleHtml = url.title 
+                                ? `<div class="url-title">${url.title}</div>` 
+                                : '';
+                            const statusBadge = url.metadata_status === 'fetched' 
+                                ? '<span class="metadata-status success">✓ Node.js</span>'
+                                : url.metadata_status === 'failed'
+                                ? '<span class="metadata-status failed">✗</span>'
+                                : '';
+                            
+                            return `
                             <tr>
                                 <td><span class="url-code">${url.short_code}</span></td>
+                                <td>
+                                    ${faviconHtml}
+                                    ${titleHtml}
+                                    ${statusBadge}
+                                </td>
                                 <td><a href="${url.long_url}" class="url-link" target="_blank">${url.long_url}</a></td>
                                 <td><strong>${url.total_clicks}</strong></td>
                                 <td class="timestamp">${formatTimestamp(url.last_clicked)}</td>
                             </tr>
-                        `).join('')}
+                        `}).join('')}
                     </tbody>
                 </table>
             `;
@@ -456,20 +541,39 @@
                     <thead>
                         <tr>
                             <th>Short Code</th>
+                            <th>Page Info</th>
                             <th>Long URL</th>
                             <th>Clicks</th>
                             <th>Created</th>
                         </tr>
                     </thead>
                     <tbody>
-                        ${allUrls.map(url => `
+                        ${allUrls.map(url => {
+                            const faviconHtml = url.favicon_url 
+                                ? `<img src="${url.favicon_url}" class="favicon" onerror="this.style.display='none'">` 
+                                : '🌐 ';
+                            const titleHtml = url.title 
+                                ? `<div class="url-title">${url.title}</div>` 
+                                : '';
+                            const statusBadge = url.metadata_status === 'fetched' 
+                                ? '<span class="metadata-status success">✓ Node.js</span>'
+                                : url.metadata_status === 'failed'
+                                ? '<span class="metadata-status failed">✗</span>'
+                                : '';
+                            
+                            return `
                             <tr>
                                 <td><span class="url-code">${url.short_code}</span></td>
+                                <td>
+                                    ${faviconHtml}
+                                    ${titleHtml}
+                                    ${statusBadge}
+                                </td>
                                 <td><a href="${url.long_url}" class="url-link" target="_blank">${url.long_url}</a></td>
                                 <td><strong>${url.total_clicks}</strong></td>
                                 <td class="timestamp">${formatTimestamp(url.first_seen)}</td>
                             </tr>
-                        `).join('')}
+                        `}).join('')}
                     </tbody>
                 </table>
             `;

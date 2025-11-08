@@ -8,6 +8,7 @@ app = Flask(__name__)
 logging.basicConfig(level=logging.INFO)
 
 GO_SERVICE_URL = "http://localhost:8000"
+NODE_SERVICE_URL = "http://localhost:3000"
 DATABASE = "python.db"
 
 
@@ -35,7 +36,11 @@ def init_db():
             long_url TEXT NOT NULL,
             total_clicks INTEGER DEFAULT 0,
             first_seen DATETIME NOT NULL,
-            last_clicked DATETIME
+            last_clicked DATETIME,
+            title TEXT,
+            description TEXT,
+            favicon_url TEXT,
+            metadata_status TEXT DEFAULT 'pending'
         )
     """
     )
@@ -75,18 +80,56 @@ def create_short_url():
         if response.status_code == 200:
             data = response.json()
 
+            # Call Node.js service to fetch metadata asynchronously
+            metadata = {"status": "unavailable"}
+            try:
+                node_response = requests.post(
+                    f"{NODE_SERVICE_URL}/api/metadata",
+                    json={"short_code": data["short_code"], "long_url": long_url},
+                    timeout=7
+                )
+                if node_response.status_code == 200:
+                    metadata = node_response.json()
+                    logging.info(f"✅ Metadata fetched: {metadata.get('title', 'N/A')}")
+                else:
+                    logging.warning(f"Node.js service returned status: {node_response.status_code}")
+            except requests.exceptions.RequestException as e:
+                logging.warning(f"Node.js service unavailable: {e}")
+
             # Store metadata in Python database
             conn = get_db()
             cursor = conn.cursor()
-            cursor.execute(
-                """
-                INSERT OR IGNORE INTO url_metadata (short_code, long_url, first_seen)
-                VALUES (?, ?, ?)
-            """,
-                (data["short_code"], long_url, datetime.now().isoformat()),
-            )
+            
+            if metadata.get("status") == "success":
+                cursor.execute(
+                    """
+                    INSERT OR IGNORE INTO url_metadata 
+                    (short_code, long_url, first_seen, title, description, favicon_url, metadata_status)
+                    VALUES (?, ?, ?, ?, ?, ?, 'fetched')
+                """,
+                    (
+                        data["short_code"],
+                        long_url,
+                        datetime.now().isoformat(),
+                        metadata.get("title"),
+                        metadata.get("description"),
+                        metadata.get("favicon_url")
+                    ),
+                )
+            else:
+                cursor.execute(
+                    """
+                    INSERT OR IGNORE INTO url_metadata (short_code, long_url, first_seen, metadata_status)
+                    VALUES (?, ?, ?, 'failed')
+                """,
+                    (data["short_code"], long_url, datetime.now().isoformat()),
+                )
+            
             conn.commit()
             conn.close()
+
+            # Add metadata to response
+            data["metadata"] = metadata
 
             logging.info(f"Created short URL: {data['short_code']} -> {long_url}")
             return jsonify(data), 200
@@ -159,7 +202,7 @@ def get_stats():
     # Top 10 most clicked URLs
     cursor.execute(
         """
-        SELECT short_code, long_url, total_clicks, last_clicked
+        SELECT short_code, long_url, total_clicks, last_clicked, title, description, favicon_url, metadata_status
         FROM url_metadata
         WHERE total_clicks > 0
         ORDER BY total_clicks DESC
@@ -199,7 +242,7 @@ def get_stats():
     # All URLs created
     cursor.execute(
         """
-        SELECT short_code, long_url, total_clicks, first_seen, last_clicked
+        SELECT short_code, long_url, total_clicks, first_seen, last_clicked, title, description, favicon_url, metadata_status
         FROM url_metadata
         ORDER BY first_seen DESC
     """

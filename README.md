@@ -1,6 +1,6 @@
 # URL Shortener - Microservice Architecture Demo
 
-A microservice-based URL shortener demonstrating proper service separation, with Go handling high-performance redirects and Python managing analytics and the dashboard UI.
+A microservice-based URL shortener demonstrating proper service separation with three independent services: Go for high-performance redirects, Python for analytics and dashboard, and Node.js for URL metadata enrichment.
 
 ## Architecture
 
@@ -24,22 +24,41 @@ This project demonstrates a realistic microservice architecture where different 
 - **Database**: `python.db` (SQLite)
 - **Responsibilities**:
   - Provide web dashboard for URL creation
+  - Orchestrate URL creation (call Go) and metadata fetching (call Node.js)
   - Collect and aggregate click events
-  - Display analytics and statistics
+  - Display analytics and statistics with metadata
   - Generate visualizations
 - **Technology**: Python with Flask
+
+**Node.js Service (Port 3000)**
+
+- **Purpose**: URL metadata enrichment
+- **Database**: `node.db` (SQLite)
+- **Responsibilities**:
+  - Fetch page titles, descriptions, and favicons from URLs
+  - Parse HTML content with Cheerio
+  - Store and serve metadata via REST API
+- **Technology**: Node.js with Express, Axios, Cheerio
 
 ### Microservice Communication
 
 ```
-User → Python Dashboard → Go Service → Database (go.db)
-                              ↓
-                        Redirect User
-                              ↓
-                    Async Event → Python Service → Database (python.db)
+User → Python Dashboard 
+         ↓
+         ├→ Go Service (Port 8000) → Create Short URL → go.db
+         └→ Node.js Service (Port 3000) → Fetch Metadata → node.db
+         ↓
+    Display URL + Metadata in UI
+
+User clicks Short URL → Go Service (Port 8000)
+                         ↓
+                    Redirect User
+                         ↓
+               Async Event → Python Service (Port 5000) → python.db
 ```
 
 - **Python → Go**: HTTP POST to create URLs
+- **Python → Node.js**: HTTP POST to fetch metadata
 - **Go → Python**: Async HTTP POST for click events (fire-and-forget)
 - **No direct database sharing**: Each service owns its data
 
@@ -47,18 +66,21 @@ User → Python Dashboard → Go Service → Database (go.db)
 
 - ✅ Create short URLs through web dashboard
 - ✅ Fast redirects handled by Go
+- ✅ **URL metadata enrichment via Node.js (titles, descriptions, favicons)**
 - ✅ Real-time analytics dashboard
 - ✅ Click tracking and history
 - ✅ Visual charts for click patterns
-- ✅ Top URLs by popularity
+- ✅ Top URLs by popularity with page info
 - ✅ Recent activity monitoring
 - ✅ Auto-refreshing dashboard (every 5 seconds)
+- ✅ **Visual indicators showing Node.js service status**
 
 ## Prerequisites
 
 - **Go**: Version 1.21 or higher
 - **Python**: Version 3.14 (or 3.8+)
-- **SQLite**: Built-in with both Go and Python
+- **Node.js**: Version 16 or higher (with npm)
+- **SQLite**: Built-in with Go, Python, and Node.js
 
 ## Installation & Setup
 
@@ -104,6 +126,22 @@ python app.py
 
 The Python service will start on `http://localhost:5000`
 
+### 4. Setup Node.js Service
+
+Open a new terminal:
+
+```bash
+cd /home/xaadu/codes/urlshortner/node-service
+
+# Install dependencies
+npm install
+
+# Run the service
+node server.js
+```
+
+The Node.js service will start on `http://localhost:3000`
+
 ## Usage
 
 ### Access the Dashboard
@@ -136,12 +174,18 @@ The dashboard automatically shows:
 
 - Total URLs created
 - Total clicks
+- **Page metadata (titles, favicons) fetched by Node.js**
 - Clicks over time (24-hour chart)
-- Top URLs by popularity
-- All created URLs
+- Top URLs by popularity with page info
+- All created URLs with metadata status indicators
 - Recent click activity
 
 The dashboard refreshes every 5 seconds automatically.
+
+**Visual Indicators:**
+- ✅ Green badge "✓ Node.js" = Metadata successfully fetched
+- ❌ Red badge "✗" = Metadata fetch failed
+- Favicon icons displayed next to page titles
 
 ## API Endpoints
 
@@ -210,10 +254,48 @@ GET /api/stats
 Returns JSON with:
 - total_urls
 - total_clicks
-- top_urls
+- top_urls (with metadata)
 - recent_clicks
 - clicks_over_time
-- all_urls
+- all_urls (with metadata)
+```
+
+### Node.js Service (Port 3000)
+
+**Fetch Metadata**
+
+```bash
+POST /api/metadata
+Content-Type: application/json
+
+{
+  "short_code": "abc123",
+  "long_url": "https://example.com"
+}
+
+Response:
+{
+  "short_code": "abc123",
+  "url": "https://example.com",
+  "title": "Example Domain",
+  "description": "Example domain for documentation",
+  "favicon_url": "https://example.com/favicon.ico",
+  "status": "success"
+}
+```
+
+**Get Metadata**
+
+```bash
+GET /api/metadata/{short_code}
+# Returns stored metadata for a short code
+```
+
+**Health Check**
+
+```bash
+GET /health
+# Returns service health status
 ```
 
 ## Database Schema
@@ -243,18 +325,38 @@ CREATE TABLE url_metadata (
     long_url TEXT NOT NULL,
     total_clicks INTEGER DEFAULT 0,
     first_seen DATETIME NOT NULL,
-    last_clicked DATETIME
+    last_clicked DATETIME,
+    title TEXT,
+    description TEXT,
+    favicon_url TEXT,
+    metadata_status TEXT DEFAULT 'pending'
+);
+```
+
+### Node.js Service (node.db)
+
+```sql
+CREATE TABLE metadata (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    short_code TEXT UNIQUE NOT NULL,
+    url TEXT NOT NULL,
+    title TEXT,
+    description TEXT,
+    favicon_url TEXT,
+    fetched_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 ```
 
 ## Microservice Design Principles Demonstrated
 
 1. **Service Independence**: Each service has its own database and can run independently
-2. **Single Responsibility**: Go focuses on performance (redirects), Python focuses on analytics
+2. **Single Responsibility**: Go=Redirects, Python=Analytics/UI, Node.js=Metadata enrichment
 3. **API Communication**: Services communicate via REST APIs, not direct database access
-4. **Asynchronous Operations**: Click events are sent asynchronously to avoid slowing redirects
-5. **Data Ownership**: Each service owns and manages its own data
-6. **Scalability**: Services can be scaled independently based on load
+4. **Service Orchestration**: Python orchestrates calls to both Go and Node.js
+5. **Asynchronous Operations**: Click events are sent asynchronously to avoid slowing redirects
+6. **Graceful Degradation**: System works even if Node.js service is unavailable
+7. **Data Ownership**: Each service owns and manages its own data
+8. **Scalability**: Services can be scaled independently based on load
 
 ## Testing the System
 
@@ -274,40 +376,64 @@ curl http://localhost:5000/api/stats
 
 ### Verify Microservice Communication
 
-1. Create a URL through the Python dashboard
+1. Create a URL through the Python dashboard (e.g., https://github.com)
 2. Check Go service logs - you should see the URL creation
-3. Click the short URL
-4. Check Go service logs - you should see the redirect and event sending
-5. Check Python service logs - you should see the event received
-6. Refresh the dashboard - you should see updated analytics
+3. Check Node.js service logs - you should see metadata fetching
+4. Check Python service logs - you should see metadata stored
+5. Look at the dashboard - you should see the page title and favicon
+6. Click the short URL
+7. Check Go service logs - you should see the redirect and event sending
+8. Check Python service logs - you should see the click event received
+9. Refresh the dashboard - you should see updated analytics with metadata
+
+**Testing Node.js Service Separately:**
+```bash
+# Test metadata fetching directly
+curl -X POST http://localhost:3000/api/metadata \
+  -H "Content-Type: application/json" \
+  -d '{"short_code":"test123","long_url":"https://github.com"}'
+
+# Check health
+curl http://localhost:3000/health
+```
 
 ## Project Structure
 
 ```
-xaadu/codes/urlshortner/
+/home/xaadu/codes/urlshortner/
 ├── README.md
 ├── go-service/
-│   ├── main.go           # Go application
+│   ├── main.go           # Go application (redirects & URL creation)
 │   ├── go.mod            # Go dependencies
+│   ├── go.sum            # Go dependency checksums
 │   └── go.db             # SQLite database (created at runtime)
-└── python-service/
-    ├── app.py            # Flask application
-    ├── requirements.txt   # Python dependencies
-    ├── python.db         # SQLite database (created at runtime)
-    └── templates/
-        └── dashboard.html # Web dashboard UI
+├── python-service/
+│   ├── app.py            # Flask application (analytics & orchestration)
+│   ├── requirements.txt   # Python dependencies
+│   ├── python.db         # SQLite database (created at runtime)
+│   └── templates/
+│       └── dashboard.html # Web dashboard UI with metadata display
+└── node-service/
+    ├── server.js         # Express application (metadata fetching)
+    ├── package.json      # Node.js dependencies
+    └── node.db           # SQLite database (created at runtime)
 ```
 
 ## Technologies Used
 
-- **Go 1.24+**: High-performance backend
+- **Go 1.21+**: High-performance backend
   - Gin web framework
   - SQLite3 driver
 - **Python 3.14**: Analytics and UI
   - Flask web framework
   - Requests library
   - SQLite3 (built-in)
-- **SQLite**: Lightweight database for both services
+- **Node.js 16+**: Metadata service
+  - Express web framework
+  - Axios (HTTP client)
+  - Cheerio (HTML parsing)
+  - SQLite3 driver
+- **SQLite**: Lightweight database for all three services
 - **Chart.js**: Data visualization
 - **Modern CSS**: Responsive dashboard design
 

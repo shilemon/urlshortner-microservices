@@ -1,9 +1,16 @@
+# Databases
+go.db
+python.db
+node.db
+
 # GO
 go.sum
-go.db
 
 # Python
 venv/
 __pycache__/
 *.pyc
-python.db
+
+# NodeJS
+node_modules/
+package-lock.json
