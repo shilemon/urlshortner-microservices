@@ -43,7 +43,7 @@ This project demonstrates a realistic microservice architecture where different 
 ### Microservice Communication
 
 ```
-User → Python Dashboard 
+User → Python Dashboard
          ↓
          ├→ Go Service (Port 8000) → Create Short URL → go.db
          └→ Node.js Service (Port 3000) → Fetch Metadata → node.db
@@ -83,6 +83,62 @@ User clicks Short URL → Go Service (Port 8000)
 - **SQLite**: Built-in with Go, Python, and Node.js
 
 ## Installation & Setup
+
+### Option 1: Docker (Recommended) 🐳
+
+**Prerequisites:**
+
+- Docker
+- Docker Compose
+
+**Quick Start:**
+
+```bash
+# Navigate to project
+cd /home/xaadu/codes/urlshortner
+
+# Build and start all services
+docker-compose up --build
+
+# Or run in background
+docker-compose up --build -d
+```
+
+**Access the application:**
+
+- Dashboard: `http://localhost:5000`
+- Go Service: `http://localhost:8000`
+- Node.js Service: `http://localhost:3000`
+
+**Useful Docker Commands:**
+
+```bash
+# View logs
+docker-compose logs -f
+
+# View logs for specific service
+docker-compose logs -f python-service
+
+# Stop all services
+docker-compose down
+
+# Stop and remove volumes (deletes databases)
+docker-compose down -v
+
+# Rebuild after code changes
+docker-compose up --build
+```
+
+**How it works:**
+
+- Each service runs in its own container
+- Services communicate via Docker network using container names
+- Databases persist in Docker volumes
+- All services start together with one command!
+
+---
+
+### Option 2: Local Development (Without Docker)
 
 ### 1. Clone or navigate to the project
 
@@ -142,6 +198,8 @@ node server.js
 
 The Node.js service will start on `http://localhost:3000`
 
+---
+
 ## Usage
 
 ### Access the Dashboard
@@ -183,6 +241,7 @@ The dashboard automatically shows:
 The dashboard refreshes every 5 seconds automatically.
 
 **Visual Indicators:**
+
 - ✅ Green badge "✓ Node.js" = Metadata successfully fetched
 - ❌ Red badge "✗" = Metadata fetch failed
 - Favicon icons displayed next to page titles
@@ -357,8 +416,30 @@ CREATE TABLE metadata (
 6. **Graceful Degradation**: System works even if Node.js service is unavailable
 7. **Data Ownership**: Each service owns and manages its own data
 8. **Scalability**: Services can be scaled independently based on load
+9. **Containerization**: Each service runs in isolated Docker containers
+10. **Environment Configuration**: Services use environment variables for Docker/local flexibility
 
 ## Testing the System
+
+### Docker Testing
+
+If you're running with Docker:
+
+```bash
+# Start services
+docker-compose up --build
+
+# In another terminal, test with curl
+curl -X POST http://localhost:5000/create -d "long_url=https://github.com"
+
+# Watch logs in real-time
+docker-compose logs -f
+
+# View specific service logs
+docker-compose logs go-service
+docker-compose logs python-service
+docker-compose logs node-service
+```
 
 ### Test URL Creation and Redirection
 
@@ -387,6 +468,7 @@ curl http://localhost:5000/api/stats
 9. Refresh the dashboard - you should see updated analytics with metadata
 
 **Testing Node.js Service Separately:**
+
 ```bash
 # Test metadata fetching directly
 curl -X POST http://localhost:3000/api/metadata \
@@ -402,18 +484,25 @@ curl http://localhost:3000/health
 ```
 /home/xaadu/codes/urlshortner/
 ├── README.md
+├── docker-compose.yml    # Docker Compose orchestration
 ├── go-service/
+│   ├── Dockerfile        # Go container definition
+│   ├── .dockerignore     # Docker ignore file
 │   ├── main.go           # Go application (redirects & URL creation)
 │   ├── go.mod            # Go dependencies
 │   ├── go.sum            # Go dependency checksums
 │   └── go.db             # SQLite database (created at runtime)
 ├── python-service/
+│   ├── Dockerfile        # Python container definition
+│   ├── .dockerignore     # Docker ignore file
 │   ├── app.py            # Flask application (analytics & orchestration)
 │   ├── requirements.txt   # Python dependencies
 │   ├── python.db         # SQLite database (created at runtime)
 │   └── templates/
 │       └── dashboard.html # Web dashboard UI with metadata display
 └── node-service/
+    ├── Dockerfile        # Node.js container definition
+    ├── .dockerignore     # Docker ignore file
     ├── server.js         # Express application (metadata fetching)
     ├── package.json      # Node.js dependencies
     └── node.db           # SQLite database (created at runtime)
@@ -421,18 +510,22 @@ curl http://localhost:3000/health
 
 ## Technologies Used
 
-- **Go 1.21+**: High-performance backend
+- **Go 1.24**: High-performance backend
   - Gin web framework
   - SQLite3 driver
+  - Alpine Linux (Docker base)
 - **Python 3.14**: Analytics and UI
   - Flask web framework
   - Requests library
   - SQLite3 (built-in)
-- **Node.js 16+**: Metadata service
+  - Slim Debian (Docker base)
+- **Node.js 24.11**: Metadata service
   - Express web framework
   - Axios (HTTP client)
   - Cheerio (HTML parsing)
   - SQLite3 driver
+  - Alpine Linux (Docker base)
+- **Docker & Docker Compose**: Containerization and orchestration
 - **SQLite**: Lightweight database for all three services
 - **Chart.js**: Data visualization
 - **Modern CSS**: Responsive dashboard design

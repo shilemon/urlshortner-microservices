@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"log"
 	"net/http"
+	"os"
 	"time"
 
 	"bytes"
@@ -17,7 +18,8 @@ import (
 
 var db *sql.DB
 
-const pythonServiceURL = "http://localhost:5000"
+// pythonServiceURL can be overridden by PYTHON_SERVICE_URL environment variable
+var pythonServiceURL = getEnv("PYTHON_SERVICE_URL", "http://localhost:5000")
 
 type ShortenRequest struct {
 	LongURL string `json:"long_url" binding:"required"`
@@ -54,6 +56,13 @@ func initDB() {
 	}
 
 	log.Println("Database initialized successfully")
+}
+
+func getEnv(key, fallback string) string {
+	if value := os.Getenv(key); value != "" {
+		return value
+	}
+	return fallback
 }
 
 func generateShortCode() string {

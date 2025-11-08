@@ -3,12 +3,14 @@ import sqlite3
 import requests
 from datetime import datetime, timedelta
 import logging
+import os
 
 app = Flask(__name__)
 logging.basicConfig(level=logging.INFO)
 
-GO_SERVICE_URL = "http://localhost:8000"
-NODE_SERVICE_URL = "http://localhost:3000"
+# Use environment variables for Docker, fallback to localhost for local dev
+GO_SERVICE_URL = os.getenv("GO_SERVICE_URL", "http://localhost:8000")
+NODE_SERVICE_URL = os.getenv("NODE_SERVICE_URL", "http://localhost:3000")
 DATABASE = "python.db"
 
 
@@ -86,20 +88,22 @@ def create_short_url():
                 node_response = requests.post(
                     f"{NODE_SERVICE_URL}/api/metadata",
                     json={"short_code": data["short_code"], "long_url": long_url},
-                    timeout=7
+                    timeout=7,
                 )
                 if node_response.status_code == 200:
                     metadata = node_response.json()
                     logging.info(f"✅ Metadata fetched: {metadata.get('title', 'N/A')}")
                 else:
-                    logging.warning(f"Node.js service returned status: {node_response.status_code}")
+                    logging.warning(
+                        f"Node.js service returned status: {node_response.status_code}"
+                    )
             except requests.exceptions.RequestException as e:
                 logging.warning(f"Node.js service unavailable: {e}")
 
             # Store metadata in Python database
             conn = get_db()
             cursor = conn.cursor()
-            
+
             if metadata.get("status") == "success":
                 cursor.execute(
                     """
@@ -113,7 +117,7 @@ def create_short_url():
                         datetime.now().isoformat(),
                         metadata.get("title"),
                         metadata.get("description"),
-                        metadata.get("favicon_url")
+                        metadata.get("favicon_url"),
                     ),
                 )
             else:
@@ -124,7 +128,7 @@ def create_short_url():
                 """,
                     (data["short_code"], long_url, datetime.now().isoformat()),
                 )
-            
+
             conn.commit()
             conn.close()
 

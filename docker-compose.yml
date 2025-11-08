@@ -1,0 +1,39 @@
+name: urlshortner-microservices
+
+services:
+  go-service:
+    build: ./go-service
+    container_name: go-service
+    ports:
+      - "8000:8000"
+    volumes:
+      - go-data:/app
+    environment:
+      - PYTHON_SERVICE_URL=http://python-service:5000
+
+  node-service:
+    build: ./node-service
+    container_name: node-service
+    ports:
+      - "3000:3000"
+    volumes:
+      - node-data:/app
+
+  python-service:
+    build: ./python-service
+    container_name: python-service
+    ports:
+      - "5000:5000"
+    volumes:
+      - python-data:/app
+    environment:
+      - GO_SERVICE_URL=http://go-service:8000
+      - NODE_SERVICE_URL=http://node-service:3000
+    depends_on:
+      - go-service
+      - node-service
+
+volumes:
+  go-data:
+  node-data:
+  python-data:
