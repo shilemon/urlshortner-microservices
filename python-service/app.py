@@ -1,0 +1,225 @@
+from flask import Flask, render_template, request, jsonify
+import sqlite3
+import requests
+from datetime import datetime, timedelta
+import logging
+
+app = Flask(__name__)
+logging.basicConfig(level=logging.INFO)
+
+GO_SERVICE_URL = "http://localhost:8000"
+DATABASE = "python.db"
+
+
+def init_db():
+    """Initialize the database with required tables"""
+    conn = sqlite3.connect(DATABASE)
+    cursor = conn.cursor()
+
+    # Table for storing click events
+    cursor.execute(
+        """
+        CREATE TABLE IF NOT EXISTS click_events (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            short_code TEXT NOT NULL,
+            clicked_at DATETIME NOT NULL
+        )
+    """
+    )
+
+    # Table for storing URL metadata
+    cursor.execute(
+        """
+        CREATE TABLE IF NOT EXISTS url_metadata (
+            short_code TEXT PRIMARY KEY,
+            long_url TEXT NOT NULL,
+            total_clicks INTEGER DEFAULT 0,
+            first_seen DATETIME NOT NULL,
+            last_clicked DATETIME
+        )
+    """
+    )
+
+    conn.commit()
+    conn.close()
+    logging.info("Database initialized successfully")
+
+
+def get_db():
+    """Get database connection"""
+    conn = sqlite3.connect(DATABASE)
+    conn.row_factory = sqlite3.Row
+    return conn
+
+
+@app.route("/")
+def dashboard():
+    """Main dashboard page"""
+    return render_template("dashboard.html")
+
+
+@app.route("/create", methods=["POST"])
+def create_short_url():
+    """Create a new short URL by calling Go service"""
+    long_url = request.form.get("long_url")
+
+    if not long_url:
+        return jsonify({"error": "URL is required"}), 400
+
+    try:
+        # Call Go service to create short URL
+        response = requests.post(
+            f"{GO_SERVICE_URL}/api/shorten", json={"long_url": long_url}, timeout=5
+        )
+
+        if response.status_code == 200:
+            data = response.json()
+
+            # Store metadata in Python database
+            conn = get_db()
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                INSERT OR IGNORE INTO url_metadata (short_code, long_url, first_seen)
+                VALUES (?, ?, ?)
+            """,
+                (data["short_code"], long_url, datetime.now().isoformat()),
+            )
+            conn.commit()
+            conn.close()
+
+            logging.info(f"Created short URL: {data['short_code']} -> {long_url}")
+            return jsonify(data), 200
+        else:
+            return (
+                jsonify({"error": "Failed to create short URL"}),
+                response.status_code,
+            )
+
+    except requests.exceptions.RequestException as e:
+        logging.error(f"Error calling Go service: {e}")
+        return jsonify({"error": "Go service unavailable"}), 503
+
+
+@app.route("/api/events", methods=["POST"])
+def receive_event():
+    """Receive click events from Go service"""
+    data = request.get_json()
+
+    if not data or "short_code" not in data:
+        return jsonify({"error": "Invalid event data"}), 400
+
+    short_code = data["short_code"]
+    clicked_at = data.get("clicked_at", datetime.now().isoformat())
+
+    conn = get_db()
+    cursor = conn.cursor()
+
+    # Store click event
+    cursor.execute(
+        """
+        INSERT INTO click_events (short_code, clicked_at)
+        VALUES (?, ?)
+    """,
+        (short_code, clicked_at),
+    )
+
+    # Update metadata
+    cursor.execute(
+        """
+        UPDATE url_metadata
+        SET total_clicks = total_clicks + 1,
+            last_clicked = ?
+        WHERE short_code = ?
+    """,
+        (clicked_at, short_code),
+    )
+
+    conn.commit()
+    conn.close()
+
+    logging.info(f"Recorded click event for: {short_code}")
+    return jsonify({"status": "success"}), 200
+
+
+@app.route("/api/stats")
+def get_stats():
+    """Get analytics statistics"""
+    conn = get_db()
+    cursor = conn.cursor()
+
+    # Total URLs created
+    cursor.execute("SELECT COUNT(DISTINCT short_code) FROM url_metadata")
+    total_urls = cursor.fetchone()[0]
+
+    # Total clicks
+    cursor.execute("SELECT COUNT(*) FROM click_events")
+    total_clicks = cursor.fetchone()[0]
+
+    # Top 10 most clicked URLs
+    cursor.execute(
+        """
+        SELECT short_code, long_url, total_clicks, last_clicked
+        FROM url_metadata
+        WHERE total_clicks > 0
+        ORDER BY total_clicks DESC
+        LIMIT 10
+    """
+    )
+    top_urls = [dict(row) for row in cursor.fetchall()]
+
+    # Recent clicks (last 20)
+    cursor.execute(
+        """
+        SELECT ce.short_code, ce.clicked_at, um.long_url
+        FROM click_events ce
+        LEFT JOIN url_metadata um ON ce.short_code = um.short_code
+        ORDER BY ce.clicked_at DESC
+        LIMIT 20
+    """
+    )
+    recent_clicks = [dict(row) for row in cursor.fetchall()]
+
+    # Clicks over time (last 24 hours, hourly breakdown)
+    twenty_four_hours_ago = (datetime.now() - timedelta(hours=24)).isoformat()
+    cursor.execute(
+        """
+        SELECT 
+            strftime('%Y-%m-%d %H:00:00', clicked_at) as hour,
+            COUNT(*) as count
+        FROM click_events
+        WHERE clicked_at >= ?
+        GROUP BY hour
+        ORDER BY hour
+    """,
+        (twenty_four_hours_ago,),
+    )
+    clicks_over_time = [dict(row) for row in cursor.fetchall()]
+
+    # All URLs created
+    cursor.execute(
+        """
+        SELECT short_code, long_url, total_clicks, first_seen, last_clicked
+        FROM url_metadata
+        ORDER BY first_seen DESC
+    """
+    )
+    all_urls = [dict(row) for row in cursor.fetchall()]
+
+    conn.close()
+
+    return jsonify(
+        {
+            "total_urls": total_urls,
+            "total_clicks": total_clicks,
+            "top_urls": top_urls,
+            "recent_clicks": recent_clicks,
+            "clicks_over_time": clicks_over_time,
+            "all_urls": all_urls,
+        }
+    )
+
+
+if __name__ == "__main__":
+    init_db()
+    app.run(host="0.0.0.0", port=5000, debug=True)

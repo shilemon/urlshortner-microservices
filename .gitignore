@@ -1,0 +1,9 @@
+# GO
+go.sum
+go.db
+
+# Python
+venv/
+__pycache__/
+*.pyc
+python.db
