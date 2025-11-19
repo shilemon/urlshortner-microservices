@@ -21,6 +21,10 @@ jobs:
         with:
           go-version: "1.22"
 
+      - name: Install Go dependencies
+        working-directory: go-service
+        run: go mod tidy
+
       - name: Build Go service
         working-directory: go-service
         run: go build -v ./...
@@ -57,6 +61,9 @@ jobs:
         working-directory: python-service
         run: pytest || true  # skip errors if no tests
 
+  # ----------------------------------------------------
+  #           DOCKER BUILD & PUSH JOB
+  # ----------------------------------------------------
   docker-build-push:
     name: Build & Push Docker Images
     runs-on: ubuntu-latest
@@ -76,14 +83,20 @@ jobs:
         run: |
           docker build -t ${{ secrets.DOCKER_USERNAME }}/go-service:latest ./go-service
           docker push ${{ secrets.DOCKER_USERNAME }}/go-service:latest
+
       - name: Build & Push Node service image
         run: |
           docker build -t ${{ secrets.DOCKER_USERNAME }}/node-service:latest ./node-service
           docker push ${{ secrets.DOCKER_USERNAME }}/node-service:latest
+
       - name: Build & Push Python service image
         run: |
           docker build -t ${{ secrets.DOCKER_USERNAME }}/python-service:latest ./python-service
           docker push ${{ secrets.DOCKER_USERNAME }}/python-service:latest
+
+  # ----------------------------------------------------
+  #                 SONARQUBE
+  # ----------------------------------------------------
   sonar-analysis:
     name: SonarQube Analysis
     runs-on: ubuntu-latest
@@ -97,7 +110,7 @@ jobs:
       - name: SonarQube Scan
         uses: sonarsource/sonarqube-scan-action@v2
         env:
-          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}   # http://<EC2-IP>:9000
+          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
 
       - name: SonarQube Quality Gate Check
@@ -106,6 +119,9 @@ jobs:
           SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
 
+  # ----------------------------------------------------
+  #             KUBERNETES DEPLOYMENT
+  # ----------------------------------------------------
   deploy:
     name: Deploy to Kubernetes Cluster
     runs-on: ubuntu-latest
@@ -119,10 +135,12 @@ jobs:
         run: |
           curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
           sudo install -o root -g root -m 0755 kubectl /usr/local/bin/kubectl
+
       - name: Configure kubeconfig
         run: |
           mkdir -p ~/.kube
           echo "${{ secrets.KUBECONFIG_DATA }}" > ~/.kube/config
+
       - name: Apply Kubernetes manifests
         run: |
           kubectl apply -f k8s/
