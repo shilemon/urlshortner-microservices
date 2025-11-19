@@ -14,3 +14,5 @@ __pycache__/
 # NodeJS
 node_modules/
 package-lock.json
+*.tar.gz
+go-service/*.tar.gz
