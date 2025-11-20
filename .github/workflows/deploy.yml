@@ -127,16 +127,35 @@ jobs:
     needs: sonar-analysis
 
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+    - name: Checkout code
+      uses: actions/checkout@v4
 
-      - name: Deploy via SSH to server
-        uses: appleboy/ssh-action@v0.1.10
-        with:
-          host: ${{ secrets.SERVER_IP }}
-          username: ubuntu
-          key: ${{ secrets.SERVER_SSH_KEY }}
-          script: |
-            cd /home/ubuntu/urlshortner-microservices
-            git pull origin main
-            kubectl apply -f k8s/
+    - name: Deploy via SSH to server
+      uses: appleboy/ssh-action@v0.1.10
+      with:
+        host: ${{ secrets.SERVER_IP }}
+        username: ubuntu
+        key: ${{ secrets.SERVER_SSH_KEY }}
+        script: |
+
+          echo "📌 Switching to project directory"
+          cd /home/ubuntu/urlshortner-microservices
+
+          echo "📌 Pulling latest updates"
+          git pull origin main
+
+          echo "📌 Loading Minikube environment"
+          # Load Docker & Minikube ENV (VERY IMPORTANT)
+          source <(minikube docker-env)
+          export KUBECONFIG=/home/ubuntu/.kube/config
+
+          echo "📌 Updating Minikube kubectl context"
+          minikube update-context
+
+          echo "📌 Verifying Kubernetes access"
+          kubectl get nodes
+
+          echo "📌 Applying Kubernetes manifests"
+          kubectl apply -f k8s/ --validate=false
+
+          echo "✅ Deployment completed successfully!"
